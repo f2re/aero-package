@@ -1,0 +1,15 @@
+{
+    "name": "f2re/aero",
+    "description": "Plugin for chart sounding aero data",
+    "type": "library",
+    "authors": [
+        {
+            "name": "F2re",
+            "email": "f2re@ya.ru"
+        }
+    ],
+    "minimum-stability": "stable",
+    "require": {
+        "szymach/c-pchart": "^3.0"
+    }
+}
