@@ -13,7 +13,7 @@ class AeroServiceProvider extends ServiceProvider
      */
     public function register()
     {
-        //
+        $this->app->make('F2re\Aero\Controllers\AeroController');
     }
 
     /**
@@ -23,6 +23,6 @@ class AeroServiceProvider extends ServiceProvider
      */
     public function boot()
     {
-        //
+        include __DIR__.'/routes.php';     
     }
 }
