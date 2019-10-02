@@ -130,6 +130,7 @@ class AeroDecoder
       ),
   );
 
+  public $_param_list  = array( 'id','stantion','code','std','nstd','utc','date','day','iscorrectdate','lastshape','cacheimg','imgexist' ); 
 
   /**
    * Конструктор класса
@@ -312,7 +313,22 @@ class AeroDecoder
     } //endif code
   }
 
-
+  public function to_array(){
+     // if ( $this->_id!=0 ){
+       $to_arr = array();
+       foreach ( $this->_param_list as $key ){
+         // if ( $key=='admin_rating' && !$this->ion_auth->is_admin() ) continue;
+         $local = '_'.$key;
+         if ( in_array($key, array('std','nstd') ) ) {
+            $to_arr[ $key ] = json_decode($this->$local,true);
+         }else{
+            $to_arr[ $key ] = $this->$local;
+         }
+     }
+     return $to_arr;
+     // }
+     return;
+  }
 
   //получаем общий массив стандартных и нестандартных поверхностей
   public function getmergedarray(){
@@ -652,6 +668,351 @@ class AeroDecoder
     if ( $res>55 ) $retval['D']=$res-50; //с 55 - вычитаем 50
 
     return $retval;
+  }
+
+
+  //получаем координаты влажной адиабаты для температуры
+  //с шагом 100гпа
+  //ограничение - -90градусов
+  function getVlagAdiabat( $T=0, $shag=100, $Tlast=-90 ){
+    $coord=array();
+    if ( isset($this->vlagoGrad[1000][$T]) ){
+      $Tcur = $T;
+      $Gcur = $this->vlagoGrad[1000][$T]*10; // grad/1km
+      $H=null;$Hprev=0;
+      $arr = $this->getmergedarray();
+      $last = array_pop( $arr );
+      // print_r($last);
+      for ( $i=1000;$i>($last['P']>100?$last['P']:100);$i=$i-$shag ){
+        if ( isset( $this->vlagoGrad[$i] ) ){ //меняем градиент
+          $Gcur=$this->vlagoGrad[$i][$T]*10;
+        }
+        $H =($this->getH($i)); //получаем высоту поверхности
+        if ( $H ){
+          $Tcur = $Tcur - (( $H-$Hprev )/1000)*$Gcur; //рассчитываем изменения температуры
+
+          if ( $Tcur<=$Tlast || $H<=0  ) continue;
+
+          $coord[]=array(  round($Tcur,1),($H) ); //сохраняем координаты
+
+          $Hprev = $H;
+        }
+      }
+      return $coord;
+    }
+    return false;
+  }
+
+
+  /**
+   * Получаем все слои с облачностью
+   * @return [type] [description]
+   */
+  function getCloudLayers(){
+    $clouds=array();
+    reset($this->dTCloud);
+    $startKey = key($this->dTCloud);
+    $start = false;
+    $iter=array();
+    $prev=null;
+    foreach ($this->mergedarray as $P => $val) {
+      if ( isset($val['D']) && isset($val['P']) && $val['P']<=850 && $val['P']>=300 ){
+        $dt = $this->interpolate( $this->dTCloud,$val['P']);
+        // echo $dt.'>'.$val['D'].'['.(isset($val['H'])?$val['H']:$this->PtoH($val['P'])).']  ';
+        if ( $val['D']<=$dt && !$start ){
+          $iter['start'] = isset($val['H'])?$val['H']:$this->PtoH($val['P']);
+          $iter['stop'] = null;
+          $start=true;
+        }
+        if ( $val['D']>=$dt && $start ){
+          $iter['stop'] = isset($val['H'])?$val['H']:$this->PtoH($val['P']);
+          $clouds[] = $iter;
+          $iter=array();
+          $start=false;
+        }
+        // $prev=array('D'=>$val['D'],'H'=>isset($val['H'])?$val['H']:$this->PtoH($val['P']) );
+
+      }
+    }
+    return $clouds;
+    // echo $this->interpolate( $this->dTCloud,600);
+  }
+
+  /**
+   * интерполяция
+   * @arr - 
+   * @return [type] [description]
+   */
+  function interpolate(&$arr, $key){
+    if ( is_array($arr) && sizeof($arr)>0  ){
+      $prev=array( 'val'=> reset($arr), 'k'=>key($arr) );
+      foreach ($arr as $k => $val) {
+        if ( $prev['k']!=$k ){
+          if ( ($key >= $prev['k'] && $key <= $k) || ($key <= $prev['k'] && $key >= $k) ){
+            return $prev['val'] + ( $prev['k'] - $key ) * ( ( $val-$prev['val'] )/( $prev['k']-$k ) );
+          }
+        }
+        $prev = array( 'k'=>$k,'val'=> $val );
+      }
+    }
+  }
+
+  /**
+   * Получаем градиент для изограмм (в градусах на 1м)
+   * @param  integer $T [description]
+   * @return [type]     [description]
+   */
+  function getIzogrammGrad($T=0){
+    if ( $T<-50 ) $T=-50;
+    if ( $T>40 )  $T=40;
+    $dH=$this->getH(800) - $this->getH(1000); //получаем разность высот для расчета градиента
+    //интерполируем градиент
+    $prev=$this->izogramm['-50'];
+    $G = null;
+    foreach ($this->izogramm as $tt => $grad) {
+      if ( $T > $prev && $T < $tt ){
+        $G = $this->izogramm[$prev] + ( ($T-$prev) *  ( ($this->izogramm[$tt] - $this->izogramm[$prev]) / ($tt-$prev) ) ) ;
+        break;
+      }
+      $prev = $T;
+    }
+    return $G/$dH;
+  }
+
+  //получаем уровень конденсации
+  function getUK(){
+    $dH=$this->PtoH($this->std['surface']['P']); //уровень земли
+    //если есть приземная инверсия
+    if ( is_array($this->inversions)&&isset($this->inversions[0]['start']['H'])&&$this->inversions[0]['start']['H']==$this->PtoH($this->std['surface']['P']) ){
+      $dH=$this->inversions[0]['stop']['H'];
+    }
+    if ( isset( $this->std['surface'] ) ){
+      // $this->_uk = ( $this->std['surface']['D'] )/( $this->syhoGrad - $this->getIzogrammGrad($this->std['surface']['T']-$this->std['surface']['D']) ) + $dH; 
+      $this->_uk = 122*( $this->std['surface']['D'] ) + $dH;  
+      return $this->_uk;
+    }   
+
+  }
+
+  //интерполируем давление и температуру на 10 гпа
+  function interpolate10($begin = 1000, $stop =100){
+    for ( $i=$begin; $i>$stop; $i-=10 ){
+      $this->p10[$i] = array( 
+        'P' => $i,
+        'H' => $this->getH($i),
+        'T' => $this->getT(null,$i)
+       );
+    }
+    print_r($this->p10);
+  }
+
+
+  //проверяем интерполированные или ральные данные
+  function isreal($val){
+    $val = $val*10;
+    $val1 = explode('.', $val);
+    // if ( ($val - ceil($val))==0.1 ) return false;
+    if ( isset($val1[1]) && $val1[1]==1 ) return false;
+    else return true;
+  }
+
+
+  /**
+   * усреднение и уплавнение координат прямой / кривой
+   * @sections - количество секций базового сплайна для построения кривой безье
+   */
+  public function averageSpline2( &$arr, $sections=3 ){
+    $new = array();
+    $i=0;$j=0;
+    $help=array();
+    $size = sizeof($arr);
+
+    $max =0; //находим самую высокую точку
+    $min =10000;
+    foreach ($arr as $key => $val) {
+      if ( $val[1]>$max ) $max = $val[1];
+      if ( $val[1]<$min ) $min = $val[1];
+    }
+
+    //делим массив на секции по высотам
+    $sectionONE = ($max - $min)/$sections;
+
+    $new[] = array_shift($arr);
+    for ($j=1; $j <= $sections; $j++) { 
+      $sectionData=array(0,0);
+      $i = 0;
+      foreach ($arr as $key => $val) {
+        if ( $val[1]<($min+$j*$sectionONE) && $val[1]>($min+($j-1)*$sectionONE) ){
+          $sectionData[0] += $val[0];
+          $sectionData[1] += $val[1];
+          $i++;
+        }
+      }
+      if ($i>0)
+        $new[]=array( $sectionData[0]/$i,$sectionData[1]/$i );
+    }
+    $new[] = array_pop($arr);
+
+    return $new;
+  }
+
+
+  //получаем все инверсии и изотермии
+  function getAllInversion(){
+    $inversions = array();
+    $startinversion=false;
+    $inv=array();
+    $prev =array();
+    // print_r($this->std);
+    //проходимся по всем точкам
+    foreach ($this->mergedarray as $P => $val) {
+      // если есть данные о температуре
+      if ( isset( $prev['T'] )&&isset( $val['T'] ) ){ //если находим инверсию
+        // если она с высотой повышается/не изменяется
+        if ( $val['T']>=$prev['T'] ){
+          // если не начата секция инверсии
+          if ( !$startinversion ){ //начинаем новую инверсию
+            $startinversion=true; // начали инверсию
+            $inv['tropo'] = false;  // обнулили тропопаузу            
+            $inv['start'] = array( 
+                    'H'=> ( isset($prev['H'])?$prev['H']:$this->PtoH($prev['P']) ) , 
+                    'T'=>$prev['T'] 
+                  );
+          }else {//сохраняем промежуточные точки
+            $inv['vals'][] = array( 
+                    'H'=> ( isset($prev['H'])?$prev['H']:$this->PtoH($prev['P']) ) , 
+                    'T'=>$prev['T'] 
+                  );
+          }
+        }else{ //если инверсии нет или закончилась
+          if ( $startinversion ){ // если инверсия закончилась
+            $startinversion=false; //закрываем ее
+            $inv['stop'] = array( 
+                  'H'=> ( isset($prev['H'])?$prev['H']:$this->PtoH($prev['P']) ) , 
+                  'T'=>$prev['T'] 
+                );
+            $inversions[] = $inv; // добавляем в массив инверсий
+            $inv = array();
+          }
+        }
+      }
+      if ( isset( $val['T'] ) ) {
+        $prev = $val;
+      }
+    }
+
+    // если инверсия не закрыта по окончанию массива данных - закрываем
+    if ( !isset($inv['stop']) && isset($inv['vals']) ){
+      $prev = array_pop($inv['vals']);
+      $inv['stop'] = array( 'H'=> ( isset($prev['H'])&&$prev['H']!=''?$prev['H']:$this->PtoH($prev['P']) ) , 'T'=>$prev['T'] );
+      $inversions[] = $inv;
+    }
+
+    // 
+    //  запускаем тропопаузу
+    //
+    $inv = array();
+
+    // print_r($this->std);
+
+    if (   isset( $this->std['tropo']['T'] )
+         &&
+         $this->std['tropo']['T']<0  
+         &&
+         $this->std['tropo']['H'] > 0
+       ){
+      $inv['tropo'] = true;
+      $startinversion=true;
+      $inv['start'] = array( 'H'=> ( isset($this->std['tropo']['H'])&&$this->std['tropo']['H']!='' ? $this->std['tropo']['H'] : $this->PtoH($this->std['tropo']['P']) ) , 'T'=>$this->std['tropo']['T'] );
+      
+      $begP = $this->std['tropo']['P'];
+      $prev = $this->std['tropo'];
+      // echo $this->std['tropo']['T'];
+      $tropo = array(); //итоговый массив
+      $last=array();
+      
+      foreach ($this->mergedarray as $P => $val) {
+        if ( isset( $prev['T'] )&&isset( $val['T'] ) && ($begP>$P) ){ //если находим инверсию
+          if ( ($val['T']>=$prev['T']) ){
+            if ( $startinversion && $prev['H']>$this->std['tropo']['H'] ){  //сохраняем промежуточные точки
+              $inv['vals'][] = array( 'H'=> ( isset($prev['H'])&&$prev['H']!=''?$prev['H']:$this->PtoH($prev['P']) ) , 'T'=>$prev['T'] );
+            }
+
+          }else{ //если инверсии нет или закончилась
+            if ( $startinversion && isset($inv['vals'])&&sizeof($inv['vals'])>0 ){
+              $startinversion=false;
+              $inv['stop'] = array( 'H'=> ( isset($prev['H'])&&$prev['H']!=''?$prev['H']:$this->PtoH($prev['P']) ) , 'T'=>$prev['T'] );
+              $tropo = $inv;
+              // print_r($tropo);
+            }
+          }
+        }
+        if ( isset( $val['T'] ) ) $prev = $val;
+      }//endforeach
+
+      //если зонд оборвался, а инверсия не закончилась - то присваиваем последнее значение
+      if ( !isset($inv['stop']) ){
+
+        if ( isset($inv['vals']) ){
+          $prev = array_pop($inv['vals']);
+        }else{
+          foreach ($this->mergedarray as $P => $val) {
+            if ( !isset($val['H'])||$val['H']=='' ) $val['H'] = $this->PtoH($val['P']);
+            if ( isset( $val['T'] )&&isset( $val['T'] ) && ( $val['H'] < $prev['H'] ) && ( $val['H'] > $inv['start']['H'] ) ){
+              $inv['vals'][] = array( 'H'=> ( isset($val['H'])&&$val['H']!=''?$val['H']:$this->PtoH($val['P']) ) , 'T'=>$val['T'] );
+            }
+          }
+        }
+        $inv['stop'] = $prev;
+        $tropo=$inv;
+      }
+      
+      // print_r($tropo);
+      //если есть инверсии выше тропопаузы - то это тропопауза
+      $firsttropo = false;
+      $tropoIsSets= false; //переменная которая учитывает тропоппаузу ЕДИНОЖДЫ (если инверсия в тропопаузе не наблюдается)
+      foreach ($inversions as $i => $val) {
+        if ( isset($val['start']) && isset($tropo['start']) && $val['start']['H']>=$tropo['start']['H'] ){
+          if ( $firsttropo ){
+            unset($inversions[$i]);
+            continue;
+          }
+          $inversions[$i]=$tropo;
+          $inversions[$i]['tropo'] = true;
+          $tropoIsSets=true;
+          // print_r($tropo);
+          $firsttropo = true;
+        }
+      }
+      if ( !$tropoIsSets && is_array($tropo) ){
+        $tropo['tropo']=true;
+        $inversions[]=$tropo;
+        $tropoIsSets=true;
+      }
+      // print_r($inversions);
+    } 
+
+    // print_r($inversions);
+    $this->inversions=$inversions;
+    return $inversions;
+  }
+
+  
+
+  //получаем высоту для искомой температуры
+  function getHforT($T=0){
+    $arr = $this->mergedarray;
+    ksort($arr);
+    // print_r($arr);
+    foreach ($arr as $P => $val) {
+      if ( isset($val['T']) && isset($val['P']) && $val['T']==$T ) return $val['H'];
+      if ( isset($val['T']) && isset($val['P']) && isset($prev['T'])  && $val['T']>$T ){
+        // 0.1 - признак экстраполированных данных
+        $ans = round(   ( isset($val['H'])?$val['H']:$this->PtoH($val['P']) ) + (  ($T - $val['T'] ) *  ( (( isset($prev['H'])?$prev['H']:$this->PtoH($prev['P']) )  - ( isset($val['H'])?$val['H']:$this->PtoH($val['P']) ) ) / ($prev['T']-$val['T']) )  ),1 );
+        return $ans + 0.01; //делим разность геопотенциалов на разность давления
+      }
+      if ( isset( $val['T'] )&& isset($val['P']) ) $prev = $val;
+    }
   }
 
   /************** KN-04 END ***************/

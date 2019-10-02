@@ -28,7 +28,7 @@ TTBB 29118 01001 00014 02617 11999 01819 22991 01224 33860 01157 44850 01341 558
   {
     $decoder = new AeroDecoder($raw);
     $decoder->decode();
-    // dd($decoder);
+    return $decoder;
   }
 
   
@@ -41,16 +41,23 @@ TTBB 29118 01001 00014 02617 11999 01819 22991 01224 33860 01157 44850 01341 558
   public function getchart($raw)
   {
     $decoder = $this->decode( $raw );
+   //@stantionInfo Array ( [id] => 27612 [name] => Москва [name_en] => Moscow [country] => 3472 [lat] => 55.83 [lon] => 37.61 [high] => 147 ) 
+    $st = [ 
+      'id'      => '27612' ,
+      'name'    => 'Москва',
+      'name_en'  => 'Moscow' ,
+      'country' => '3472' ,
+      'lat'     => 55.83 ,
+      'lon'     => 37.61 ,
+      'high'    => 147  ];
 
-    $st = [ 'name'=>'ru',
-            'name_en'=>'en',
-            'id'=>'00000' ];
     $drawer = new AeroDrawer( $decoder, $st );
     if ($drawer->checkData()){
       $drawer->init()
              ->drawInversions()
              ->drawTemp()
-             ->drawIsoterm();
+             ->drawIsoterm()
+             ->saveImage();
     }
 
   }
