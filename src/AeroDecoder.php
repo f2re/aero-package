@@ -313,6 +313,14 @@ class AeroDecoder
     } //endif code
   }
 
+  /**
+   * return stantion ID
+   * @return [type] [description]
+   */
+  public function get_stantion_id(){
+    return $this->_stantion;
+  }
+
   public function to_array(){
      // if ( $this->_id!=0 ){
        $to_arr = array();
@@ -794,6 +802,97 @@ class AeroDecoder
 
   }
 
+
+  // получаем или интерполируем темпетаруру на высоте или уровне
+  function getT($H=null,$P=null){
+    if ( $H==null ){
+      $P=(int)$P;
+      if ( is_array($this->mergedarray) && sizeof($this->mergedarray)>0 && $P>=0 ){
+        $prev=null;
+        // print_r($this->mergedarray);
+        foreach ( $this->mergedarray as $Pa => $val) {
+          if ( ($Pa == $P ) && isset($val['T']) ) return $val['T'];
+          if ( ($Pa < $P ) && isset($prev['T'])&& isset($val['T']) && isset($prev['P']) && $this->isreal($val['T']) ){
+            // 0.1 - признак экстраполированных данных
+            $ans = round(   $prev['T'] + ( ($prev['P'] - $P) *  ( ($val['T'] - $prev['T']) / ($prev['P']-$Pa) ) ),1 );
+            return $ans<0?($ans-0.01):($ans + 0.01); //делим разность геопотенциалов на разность давления
+          }
+          
+          //если предыдущий уровень содержит высоту, то сохраняем его как предыдущий
+          if ( isset($val['T'])&&$val['T']!=null && $this->isreal($val['T']) )
+            $prev=$val;
+        }
+      }
+    }else{
+      $H=(int)$H;
+      if ( is_array($this->mergedarray) && sizeof($this->mergedarray)>0 && $H>=0 ){
+        $prev=null;
+        // print_r($this->mergedarray);
+        foreach ( $this->mergedarray as $Pa => $val) {
+          if ( ($val['H'] == $H ) && isset($val['T']) ) return $val['T'];
+          if ( ($val['H'] > $H ) && isset($prev['H']) &&isset($prev['T'])&&isset($val['T']) && isset($prev['P']) ){
+            // 0.1 - признак экстраполированных данных
+            $ans = round(   $prev['T'] + ( ($prev['H'] - $H) *  ( ($val['T'] - $prev['T']) / ($prev['H']-$val['H']) ) ),1 );
+            return $ans<0?($ans-0.01):($ans + 0.01); //делим разность геопотенциалов на разность давления
+          }
+          
+          //если предыдущий уровень содержит высоту, то сохраняем его как предыдущий
+          if ( isset($val['T'])&&$val['T']!=null  )
+            $prev=$val;
+        }
+      }
+    }
+    return false;
+  }
+
+
+  // получаем или интерполируем темпетаруру на высоте или уровне
+  function getParam($param='T',$H=null,$P=null){
+    if ( !in_array($param, array('T','D','DD','FFF')) )
+      return false;
+
+    if ( $H==null ){
+      $P=(int)$P;
+      if ( is_array($this->mergedarray) && sizeof($this->mergedarray)>0 && $P>=0 ){
+        $prev=null;
+        // print_r($this->mergedarray);
+        foreach ( $this->mergedarray as $Pa => $val) {
+          if ( ($Pa == $P ) && isset($val[$param]) ) return $val[$param];
+          if ( ($Pa < $P ) && isset($prev[$param])&& isset($val[$param]) && isset($prev['P']) && $this->isreal($val[$param]) ){
+            // 0.1 - признак экстраполированных данных
+            $ans = round(   $prev[$param] + ( ($prev['P'] - $P) *  ( ($val[$param] - $prev[$param]) / ($prev['P']-$Pa) ) ),1 );
+            return $ans<0?($ans-0.01):($ans + 0.01); //делим разность геопотенциалов на разность давления
+          }
+          
+          //если предыдущий уровень содержит высоту, то сохраняем его как предыдущий
+          if ( isset($val[$param])&&$val[$param]!=null && $this->isreal($val[$param]) )
+            $prev=$val;
+        }
+      }
+    }else{
+      $H=(int)$H;
+      if ( is_array($this->mergedarray) && sizeof($this->mergedarray)>0 && $H>=0 ){
+        $prev=null;
+        // print_r($this->mergedarray);
+        foreach ( $this->mergedarray as $Pa => $val) {
+          if ( ($val['H'] == $H ) && isset($val[$param]) ) return $val[$param];
+          if ( ($val['H'] > $H ) && isset($prev['H']) &&isset($prev[$param])&&isset($val[$param]) && isset($prev['P']) ){
+            // 0.1 - признак экстраполированных данных
+            $ans = round(   $prev[$param] + ( ($prev['H'] - $H) *  ( ($val[$param] - $prev[$param]) / ($prev['H']-$val['H']) ) ),1 );
+            return $ans<0?($ans-0.01):($ans + 0.01); //делим разность геопотенциалов на разность давления
+          }
+          
+          //если предыдущий уровень содержит высоту, то сохраняем его как предыдущий
+          if ( isset($val[$param])&&$val[$param]!=null  )
+            $prev=$val;
+        }
+      }
+    }
+    return false;
+  }
+
+
+
   //интерполируем давление и температуру на 10 гпа
   function interpolate10($begin = 1000, $stop =100){
     for ( $i=$begin; $i>$stop; $i-=10 ){
@@ -822,22 +921,25 @@ class AeroDecoder
    * @sections - количество секций базового сплайна для построения кривой безье
    */
   public function averageSpline2( &$arr, $sections=3 ){
-    $new = array();
-    $i=0;$j=0;
-    $help=array();
+
+    $new  = array();
+    $i    = 0;
+    $j    = 0;
+    $help = array();
     $size = sizeof($arr);
 
-    $max =0; //находим самую высокую точку
-    $min =10000;
+    $max = 0; //находим самую высокую точку
+    $min = 30000;
+
     foreach ($arr as $key => $val) {
       if ( $val[1]>$max ) $max = $val[1];
       if ( $val[1]<$min ) $min = $val[1];
     }
-
     //делим массив на секции по высотам
     $sectionONE = ($max - $min)/$sections;
 
     $new[] = array_shift($arr);
+
     for ($j=1; $j <= $sections; $j++) { 
       $sectionData=array(0,0);
       $i = 0;
@@ -848,8 +950,9 @@ class AeroDecoder
           $i++;
         }
       }
-      if ($i>0)
+      if ($i>0 && ($sectionData[0]!=0 && $sectionData[1] !=0) ){
         $new[]=array( $sectionData[0]/$i,$sectionData[1]/$i );
+      }
     }
     $new[] = array_pop($arr);
 
@@ -997,7 +1100,187 @@ class AeroDecoder
     return $inversions;
   }
 
+  //получаем координаты кривой состояния
   
+  function getSostSpline($uk=null,$start=null) {
+    if ( $uk!=null ){
+      $this->generateSostSpline($uk,$start);
+      return $this->sostSpline;
+    }else{
+      if ( is_array($this->sostSpline) && sizeof( $this->sostSpline )>0 ){
+        return $this->sostSpline;
+      }else{
+        return null;
+      }
+    }
+  }
+
+
+  //// start - массив с данными о поверхности или верхней границе приземной инверсии
+  function generateSostSpline( $uk=null,$start=null ){
+    if ( $uk==null ){
+     return null;
+    }
+    else{
+      // Построение влажноадиабатического участка кривой от 1000-900 до 500 гПа
+          //
+          // Расчет температуры смоченного термометра средней в слое от земли до 900 гПа
+          $UKP    = $this->getP($uk);
+          print_r($UKP);
+          if ( $UKP==0 ){
+            return 1;
+          }
+          $H      = $start==null? ((isset($this->std['surface']['H']) && $this->std['surface']['H']!='' ) ? $this->std['surface']['H'] : $this->PtoH($this->std['surface']['P'])) : $start['H'];
+          $TUK    = ($start==null? $this->std['surface']['T'] : $start['T']) - ( $uk-$H )*0.98/100;
+          
+
+          $Po       = $this->std['surface']['P'];
+          $TtrosySrPo_900 = $this->getAverageParam('TD',$Po,900);
+          $TsrPo_900    = $this->getAverageParam('T',$Po,900);
+          
+          // $PsrZ_900    = ($Po + 900)/2;
+          $PsrZ_900   = $UKP;
+          $T850       = $this->getRealT(850);
+          $T500       = $this->getRealT(500);
+          $E = 6.11 * pow(10, 7.5 * $TtrosySrPo_900 / (237.7 + $TtrosySrPo_900));
+          // TsmT - температура смоченного термометра
+          $TsmT = (((0.00066 * $PsrZ_900) * $TsrPo_900) + ((4098 * $E) / (($TtrosySrPo_900 + 237.7) * ($TtrosySrPo_900 + 237.7)) 
+              * $TtrosySrPo_900)) /
+              ((0.00066 * $PsrZ_900) + (4098 * $E) / (($TtrosySrPo_900 + 237.7) * ($TtrosySrPo_900 + 237.7)));
+          // Вычисление массовой доли насыщенного водяного пара Sm
+          // Округляю давление в середине слоя до целого. 0,1 - для округления по правилам арифметики
+          $PsrZ_900 = round($PsrZ_900 + 0.1);        
+          // Выделяю крайнюю цифру справа
+          $Pcount = 1000;
+          while ($Pcount > $PsrZ_900)
+          {
+              $Pcount = $Pcount - 10;
+          }
+          $dP = $Pcount - $PsrZ_900; // Разница давления до целых десятков
+          // Вычисление Sm на исходном уровне
+          if ( $PsrZ_900!=0 && $TsmT!=-235 ){
+            $Sm[0] = (622 * 6.1078 / $PsrZ_900) * exp((17.13 * $TsmT) / (235 + $TsmT));
+          }else{
+            $Sm[0] = 0;
+          }
+          // Вычисление приращения температуры на уровне, не кратном 10 гПа
+          // Формула приращения температуры на кривой состояния
+          $SmSr = $Sm[0];
+
+          $dT[0] = (((2.49 * $SmSr + 0.286 * (273.15 + $TsrPo_900))) /
+              (1 + (13513.9 * $SmSr / pow(273.15 + $TsrPo_900, 2)))) *
+                   log(($PsrZ_900 + $dP) / $PsrZ_900);
+          // Вычисление приращения температуры на уровнях, кратных 10 гПа
+          $T[0]['T'] = $TUK;
+          $T[1]['T'] = $TUK + $dT[0];
+          $T[0]['P'] = ($UKP);
+          $T[1]['P'] = ($UKP + $dP);
+
+          $P = $Pcount;
+
+          $nlevel=1;
+          // Построение кривой влажноадиабатического участка на уровнях кратных 10
+          while ($P > 100)   {
+            if ( $T[$nlevel]['T']>-80 ){
+                $Sm[$nlevel] = (622 * 6.1078 / ($P - 10)) * exp((17.13 * $T[$nlevel]['T']) / (235 + $T[$nlevel]['T']));
+                $SmSr = ($Sm[$nlevel - 1] + $Sm[$nlevel]) / 2;
+                $dT[$nlevel] = (((2.49 * $SmSr + 0.286 * (273.15 + $T[$nlevel]['T']))) /
+                (1 + (13513.9 * $SmSr / pow(273.15 + $T[$nlevel]['T'], 2)))) *
+                     log(($P - 10) / $P);
+              
+                $T[$nlevel + 1]['T'] = $T[$nlevel]['T'] + $dT[$nlevel];
+                $T[$nlevel + 1]['P'] = ($P);
+                $nlevel++;
+            }
+             
+              $P = $P - 10;
+          }
+          
+          $res = array();
+          foreach ($T as $val) {
+            $h = $this->getH($val['P']);
+            if ( $h )
+              $res[] = array( $val['T'],  $h );
+          }
+          $this->sostSpline = $res;
+    }
+  }
+
+
+  function getRealT($P){
+    foreach ($this->mergedarray as $Pa => $val) {
+      if ( ($Pa == $P) ) {
+        if ( isset( $val['T'] ) )
+          return $val['T'];
+        else
+          return $this->getT(null,$P);
+      }
+    }
+  }
+
+
+  /**
+   * получение среднего заданного параметра @param в слое @P0 - @P1
+   */
+  function getAverageParam($param='T',$P0=1000,$P1=850){
+    $i=0;
+    $sum=0;
+    if ( $param=='TD' ){ //ищем точку росы а не известный параметр
+      foreach ($this->mergedarray as $key => $value) {
+        if ( isset($value['P'])&& ($P0>=$value['P'] && $P1<=$value['P']) ){
+          if ( isset( $value[ 'T' ] )&&$value[ 'T' ]!=null&&isset( $value[ 'D' ] )&&$value[ 'D' ]!=null ){
+            // echo 'P['.$value['P'].']-'.($value[ 'T' ]-$value[ 'D' ]).' ';
+            $sum+=$value[ 'T' ]-$value[ 'D' ];
+            $i++;
+          }
+        }
+      }
+    }else{
+      foreach ($this->mergedarray as $key => $value) {
+        if ( isset($value['P'])&& ($P0>=$value['P'] && $P1<=$value['P']) ){
+          if ( isset( $value[ $param ] )&&$value[ $param ]!=null ){
+            $sum+=$value[ $param ];
+            $i++;
+          }
+        }
+      }
+    }
+    return $i>0?$sum/$i:null;
+  }
+
+
+    // получаем или интерполируем давление на высоте
+  function getP($H){
+    $H=(int)$H;
+    if ( is_array($this->mergedarray) && sizeof($this->mergedarray)>0 && $H>=0 ){
+      $prev=null;
+      // print_r($this->mergedarray);
+      foreach ( $this->mergedarray as $Pa => $val) {
+        if ( ($val['H'] > $H ) && isset($prev['H']) && isset($prev['P']) ){
+          // 0.1 - признак экстраполированных данных
+          return  (int)(   $prev['P'] + ( ($prev['H'] - $H) *  ( ($val['P'] - $prev['P']) / ($prev['H']-$val['H']) ) ) ) + 0.01; //делим разность геопотенциалов на разность давления
+        }
+        
+        //если предыдущий уровень содержит высоту, то сохраняем его как предыдущий
+        if ( isset($val['P'])&&$val['P']>0 )
+          $prev=$val;
+      }
+    }
+    return false;
+  }
+
+  //получаем точку на кривой состояния по одной из координат
+  function getPointOnSostSpline( $x=null, $y=null ){
+    $farr=array();
+    foreach ($this->sostSpline as $arr) { //переведем все в массив, пригодный для интерполяции по схеме КЛЮЧ - ЗНАЧЕНИЕ (поиск по ключу)
+      if ( $x!=null ){
+        $farr[ $arr[0] ] = $arr[1];
+      }else{
+        $farr[ $arr[1] ] = $arr[0];
+      }
+    }
+    return $this->interpolate( $farr, ( $x!=null?$x:$y ) );
+  }
 
   //получаем высоту для искомой температуры
   function getHforT($T=0){

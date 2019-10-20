@@ -81,15 +81,29 @@ class AeroDrawer
   private $_font = "DejaVuSans-ExtraLight.ttf";
 
   /**
+   * Start sostoyanie spline
+   * @var null
+   */
+  private $_start = Null;
+
+  /**
+   * Pallete of colors fills
+   * @var array
+   */
+  private $_fyellow = array('R'=>251,'G'=>255,'B'=>56);
+  private $_fred    = array('R'=>204,'G'=>41,'B'=>54);
+  private $_fblue   = array('R'=>67,'G'=>146,'B'=>241);
+
+  /**
    * Instantiate a new AeroDrawer instance.
    */
-  public function __construct( $kn, $stantionInfo ){
+  public function __construct( $kn, $stinfo ){
     // dd($kn);
     // setting the KN04 code to class
     $this->setKn($kn);
 
     // set up stantion info
-    $this->setStantion($stantionInfo);
+    $this->setStantion($stinfo);
   }
 
   /**
@@ -122,8 +136,8 @@ class AeroDrawer
    * Set Up KN04 code
    * @param [type] $kn [description]
    */
-  public function setStantion($stantionInfo){
-    $this->_stinfo = $stantionInfo;
+  public function setStantion($stinfo){
+    $this->_stinfo = $stinfo;
     return $this;
   }
 
@@ -153,6 +167,7 @@ class AeroDrawer
   public function getPlotY(){
     return $this->_plotsize[1];
   }
+
 
   /**
    * рассчитываем координаты для кривой годске (кривая насыщения надо льдом)
@@ -195,7 +210,7 @@ class AeroDrawer
     /* Define the boundaries of the graph area */
     $this->_image->setGraphArea( (int)( $this->getPlotX()*0.05 ),
                                  (int)( $this->getPlotY()*0.02 ),
-                                 (int)( $this->getPlotY()*0.80 ),
+                                 (int)( $this->getPlotX()*0.80 ),
                                  (int)( $this->getPlotY()*0.95 ));
 
     /**
@@ -301,8 +316,7 @@ class AeroDrawer
                       'Alpha' => 30 );
     for ($i=-50; $i<50 ; $i=$i+10) { 
         $points = $this->_kn->getVlagAdiabat($i,35);
-        // dd(  );
-        //$this->_kn->averageSpline2($points,4)
+        $this->_kn->averageSpline2($points,4);
         $this->drawChartSpline( $points, $Acolors );    
     }
 
@@ -345,11 +359,11 @@ class AeroDrawer
     $theight            = 60; //высота надписи
     $TextSettings2      = array( "DrawBox"=>FALSE,"R"=>100,"G"=>100,"B"=>150, 'Alpha'=>90,"FontSize"=>$this->_baseSize);
     $Icolors            = array( "R"=>220,"G"=>220,"B"=>50,"Ticks"=>0 );
-    $TROPOcolors        = array( "R"=>110,"G"=>10,"B"=>0,"Ticks"=>0 ); //цвета тропопаузы
+    $TROPOcolors        = array( "R"=>140,"G"=>40,"B"=>20,"Ticks"=>0 ); //цвета тропопаузы
     $tropoH             = 5500;//высота выше которой инверсии считаем тропопаузами
-    $polygon            = array( "R"=>220,"G"=>220,"B"=>50,"Alpha"=>30,
-                                 "Dash"=>TRUE,"DashR"=>170,"DashG"=>220,"DashB"=>190,
-                                 "BorderR"=>255, "BorderG"=>255,"BorderB"=>255);
+    $polygon            = array( "Alpha"=>40,
+                                 "Dash"=>TRUE,"DashR"=>190,"DashG"=>230,"DashB"=>210,
+                                 "BorderR"=>255, "BorderG"=>255,"BorderB"=>255) + $this->_fyellow;
 
     $polygonTROPO       = array( "R"=>110,"G"=>20,"B"=>20,"Alpha"=>25,
                                  "Dash"=>TRUE,"DashR"=>170,"DashG"=>220,"DashB"=>190,
@@ -380,6 +394,31 @@ class AeroDrawer
         $dH = ceil(  $val['stop']['H']-$val['start']['H']    ); //высота инверсионного слоя
         $dT = round( $val['stop']['T']-$val['start']['T'], 1 ); //разность температур
 
+        $Points = array(  );
+        //рисуем против часовой стрелки с верхнего левого угла
+        //первая точка - левая верхняя
+        $Points[] = $this->toX( $val['stop']['T'] );  
+        $Points[] = $this->toY( $val['stop']['H'] );
+        //проверяем есть ли слева промежуточные точки (чтобы заполнить ломаные кривые)
+        if ( isset($val['vals']) && sizeof($val['vals'])>0 ){
+            $size = sizeof($val['vals'])-1; //в обратном порядке идем против часовой стрелки сверху вниз
+            for ( $i=$size; $i>=0; $i--) {
+                $Points[] = $this->toX( $val['vals'][$i]['T'] );  
+                $Points[] = $this->toY( $val['vals'][$i]['H'] );   
+            }                
+        }
+        $Points[] = $this->toX( $val['start']['T'] );  
+        $Points[] = $this->toY( $val['start']['H'] );
+        $Points[] = $this->toX( $startT+$step );  
+        $Points[] = $this->toY( $val['start']['H'] );
+        //последнняя точка 
+        $Points[] = $this->toX( $startT+$step );  
+        $Points[] = $this->toY( $val['stop']['H'] );
+        
+        $this->_image->drawPolygon( $Points, $istropo? $polygonTROPO :$polygon);
+
+        $istropo = false;
+
         if ( $istropo ){
             $this->_image->drawText( $this->toX( $startT+($step - 17 )/2 ),       
                                      $this->toY( $val['start']['H']+($dH-$theight*5)/2 ), 
@@ -407,30 +446,7 @@ class AeroDrawer
                                      $TextSettings2);
         }
 
-        $Points = array(  );
-        //рисуем против часовой стрелки с верхнего левого угла
-        //первая точка - левая верхняя
-        $Points[] = $this->toX( $val['stop']['T'] );  
-        $Points[] = $this->toY( $val['stop']['H'] );
-        //проверяем есть ли слева промежуточные точки (чтобы заполнить ломаные кривые)
-        if ( isset($val['vals']) && sizeof($val['vals'])>0 ){
-            $size = sizeof($val['vals'])-1; //в обратном порядке идем против часовой стрелки сверху вниз
-            for ( $i=$size; $i>=0; $i--) {
-                $Points[] = $this->toX( $val['vals'][$i]['T'] );  
-                $Points[] = $this->toY( $val['vals'][$i]['H'] );   
-            }                
-        }
-        $Points[] = $this->toX( $val['start']['T'] );  
-        $Points[] = $this->toY( $val['start']['H'] );
-        $Points[] = $this->toX( $startT+$step );  
-        $Points[] = $this->toY( $val['start']['H'] );
-        //последнняя точка 
-        $Points[] = $this->toX( $startT+$step );  
-        $Points[] = $this->toY( $val['stop']['H'] );
         
-        $this->_image->drawPolygon( $Points, $istropo? $polygonTROPO :$polygon);
-
-        $istropo = false;
     }
 
     return $this;
@@ -455,9 +471,9 @@ class AeroDrawer
       * дефицита точки росы
       * и кривую насыщения надо льдом
       */
-    $Tcolors   = array( "R"=>255,"G"=>50,"B"=>50,"Ticks"=>0 );
-    $Dcolors   = array( "R"=>50,"G"=>180,"B"=>50,"Ticks"=>0 );
-    $Gcolors   = array( "R"=>50,"G"=>50,"B"=>255,"Ticks"=>5 );
+    $Tcolors   = array( "R"=>230,"G"=>50,"B"=>50,"Ticks"=>0,"Weight"=>0.7 );
+    $Dcolors   = array( "R"=>50,"G"=>180,"B"=>50,"Ticks"=>0, "Weight"=>0.7 );
+    $Gcolors   = array( "R"=>50,"G"=>50,"B"=>200,"Ticks"=>5 );
     $Tprev     = array();
     $allValues = $this->_kn->mergedarray;
     $points    = array();
@@ -475,8 +491,6 @@ class AeroDrawer
                                         $val['T'],
                                         $val['H'],  
                                         $Tcolors);
-          if ( $Tprev['D']!=null && $val['D']!=null ){
-
             $this->drawChartLine( $Tprev['T']-$Tprev['D'],
                                           $Tprev['H'], 
                                           $val['T']-$val['D'],
@@ -489,12 +503,11 @@ class AeroDrawer
                                             $val['H'],  
                                             $Gcolors);
             }
-          }
         }
+
         $Tprev   = array( 'H'=>$val['H'], 'T'=>$val['T'],'D'=>$val['D'] );                
       }
     }
-    // print_r($val);
     //рисуем уровень -20
     $T20              = $this->_kn->getHforT(-20);
     $T10              = $this->_kn->getHforT(-10);
@@ -548,8 +561,7 @@ class AeroDrawer
         $this->_image->drawText( $this->toX($step+ 1), $this->toY($T0-85),"T=0°",$TextSettings);
         $this->_image->drawText( $this->toX($step+ 8), $this->toY($T0-45), round($T0).'м' ,$TextSettings2);
     }
-    //рисуем уровень конденсации
-    $uk = $this->_kn->getUK();
+    
 
     return $this;
   }
@@ -667,7 +679,7 @@ class AeroDrawer
         }
         $y =  $this->toY( $value['H'] )-$imgHeight;
         $this->_image->drawText( $x+10-$xOffset, $y+5, $value['DD'].'° - '. (int)($value['FFF']*3.6) ,$TextSettings2);
-        $this->_image->drawWind( $value['FFF'],$value['DD'],$x,$y );
+        $this->drawWindLeaf( $value['FFF'],$value['DD'],$x,$y );
         
         $prev = $value;
         $xOffset=0;
@@ -698,7 +710,7 @@ class AeroDrawer
 
     if ( is_array($inversion)
          && isset($inversion[0]['start']['H'])
-         && $inversion[0]['start']['H'] == $thi->_kn->PtoH($values['std']['surface']['P']) ){
+         && $inversion[0]['start']['H'] == $this->_kn->PtoH($this->_values['std']['surface']['P']) ){
         $start = $inversion[0]['stop'];
     }
 
@@ -706,14 +718,24 @@ class AeroDrawer
       $start['H']=$this->_kn->PtoH($start['P']);
     }
 
-    $sost     = $this->_kn->getSostSpline($uk,$start); //задаем уровень конденсации
-    $points   = $this->_kn->averageSpline2($sost,8);
-    $KScolors = array( "R"=>0,"G"=>0,"B"=>0,"Ticks"=>0,'Alpha'=>80 );
-    $this->drawChartSpline($points,$KScolors); 
+    // 
+    //сохраняем 
+    $this->_start = $start;
 
-    //рисуем сухую часть кривой состояния
-    $point1 = reset($points);
-    $this->drawChartLine( ($start['T']), ($start['H']), $point1[0],$point1[1],  $KScolors);
+    //рисуем уровень конденсации
+    $uk   = $this->_kn->getUK();
+    $sost = $this->_kn->getSostSpline($uk,$start); //задаем уровень конденсации
+
+    if ( count($sost)>0 ){
+      $points   = $this->_kn->averageSpline2($sost,8);
+      $KScolors = array( "R"=>0,"G"=>0,"B"=>0,"Ticks"=>0,'Alpha'=>80 );
+      $this->drawChartSpline($points,$KScolors); 
+
+      //рисуем сухую часть кривой состояния
+      $point1 = reset($points);
+      $this->drawChartLine( ($start['T']), ($start['H']), $point1[0],$point1[1],  $KScolors);
+
+    }   
 
     return $this;
   }
@@ -735,15 +757,28 @@ class AeroDrawer
      * закрашиваем регион с неустойчивостью или устойчивостью
      *    
      */   
-    $polygonStable   = array( "R"=>0,"G"=>100,"B"=>255,"Alpha"=>20);
-    $polygonUNStable = array( "R"=>255,"G"=>30,"B"=>30,"Alpha"=>20,
+    $polygonStable   = array( "Alpha"=>35) + $this->_fblue ;
+    $polygonUNStable = array( "Alpha"=>20,
                               "Dash"=>TRUE,"DashR"=>170,"DashG"=>220,"DashB"=>190,
-                              "BorderR"=>255, "BorderG"=>255,"BorderB"=>255);
+                              "BorderR"=>255, "BorderG"=>255,"BorderB"=>255)  + $this->_fred;
     $PointsA         = array();//точки на кривой состояния
     $PointsT         = array();//точки на кривой температуры
     $PointsRes       = array(); //итоговый массив
     $fH              = null;
-    $points          = array_reverse($points);
+    $allValues       = $this->_kn->mergedarray;
+
+    //рисуем уровень конденсации
+    $uk   = $this->_kn->getUK();
+    $sost = $this->_kn->getSostSpline($uk,$this->_start); //задаем уровень конденсации
+    
+    if ( count($sost)==0 ){
+      return $this;
+    }
+
+    $points   = $this->_kn->averageSpline2($sost,8);
+    // $points   = $sost;
+    $points   = array_reverse($points);
+    $point1   = reset($points);
 
     //точки на кривой состояния
     foreach ($points as $p) {
@@ -755,8 +790,8 @@ class AeroDrawer
     }
     $PointsA[] = $point1[0];
     $PointsA[] = $point1[1];
-    $PointsA[] = $start['T'];
-    $PointsA[] = $start['H'];
+    $PointsA[] = $this->_start['T'];
+    $PointsA[] = $this->_start['H'];
 
     //точки на кривой температуры
     foreach ($allValues as $P => $val) {
@@ -766,7 +801,7 @@ class AeroDrawer
       if (    isset($val['H']) 
            && isset($val['T']) 
            && $val['H']<$fH 
-           && $val['H']>=$start['H'] ){
+           && $val['H']>=$this->_start['H'] ){
          $PointsT[] = $val['T'];
          $PointsT[] = $val['H'];
       }
@@ -781,7 +816,7 @@ class AeroDrawer
     $stable = true;
     $j      = 0; //указатель на адрес в итоговом массиве
 
-    //проходимся сверху вниз по кривой температуры //кривой состояния
+    //проходимся сверху вниз по кривой кривой состояния
     for ($i=0; $i < $size ; $i+=2) { 
       $Tx= $this->_kn->getPointOnSostSpline( null, $PointsT[$i+1] ) ;//температура на высоте кривой стратификации
       if ( $PointsT[$i] > $Tx ){ //значит устойчиво true
@@ -871,7 +906,7 @@ class AeroDrawer
     }
 
     //включаем тени
-    $this->_image->setShadow(false,$shadow );   
+    $this->_image->setShadow(false,$this->_shadow );   
 
     //заполняем снизу вверх точки температуры      
     foreach ($PointsRes as $val) {
@@ -906,7 +941,7 @@ class AeroDrawer
     }
     
     //включаем тени
-    $this->_image->setShadow(TRUE,$shadow );   
+    $this->_image->setShadow(TRUE,$this->_shadow );   
 
     return $this;
   }
@@ -926,13 +961,23 @@ class AeroDrawer
     //
     //рисуем уровень конденсации
     //
-    $UKcolors       = array( "R"=>20,"G"=>20,"B"=>150,"Ticks"=>0,'Alpha'=>80,
-                             'ShowControl'=>false,'Force'=>4, 'Segments'=>20 );
+    $UKcolors       = array( "Ticks"=>0,'Alpha'=>80,
+                             'ShowControl'=>false,'Force'=>4, 'Segments'=>20 ) + $this->_fblue;
     $TextSettingsUK = array( "R"=>20,"G"=>20,"B"=>150,"Angle"=>0,'Alpha'=>100,
                              "FontSize"=>$this->_baseSize, "DrawBox"=>FALSE,
                              'BoxR'=>255,'BoxG'=>255,'BoxB'=>255,'BoxAlpha'=>50,
                              'RoundedRadius'=>5);
+    
+    //рисуем уровень конденсации
+    $uk = $this->_kn->getUK();
+    //рисуем кривую состояния
+    $start  = $this->_values['std']['surface'];
+    $sost   = $this->_kn->getSostSpline($uk,$start); //задаем уровень конденсации
+    $points = $this->_kn->averageSpline2( $sost,8 );
+    $point1 = reset($points);
+
     $points = array();
+
     $dX     = 18;
     if ( $point1[0]+$dX > 50){
         $dX = $point1[0]+$dX -50;
@@ -1037,7 +1082,7 @@ class AeroDrawer
                                     "BorderR"=>120, "BorderG"=>120,"BorderB"=>120,"Ticks"=>5);
     $TextSettingsINDEX     = array( "R"=>20,"G"=>20,"B"=>200, 'Alpha'=>90,
                                     "FontSize"=>$this->_baseSize,"DrawBox"=>FALSE);
-    $TextSettingsINDEXR    = array( "R"=>200,"G"=>20,"B"=>20, 'Alpha'=>90,
+    $TextSettingsINDEXR    = array( "R"=>220,"G"=>20,"B"=>20, 'Alpha'=>100,
                                     "FontSize"=>$this->_baseSize,"DrawBox"=>FALSE);
     $TextSettingsMinINDEX  = array( "R"=>20,"G"=>20,"B"=>200, 'Alpha'=>90,
                                     "FontSize"=>9,"DrawBox"=>FALSE);
@@ -1058,14 +1103,14 @@ class AeroDrawer
                                         $start_Y+$offset+$strings*$string_H+10 ,
                                         $polygonINDEX );    
     $offset += 22;
-    //@stantionInfo Array ( [id] => 27612 [name] => Москва [name_en] => Moscow [country] => 3472 [lat] => 55.83 [lon] => 37.61 [high] => 147 ) 
+    //@this->_stinfo Array ( [id] => 27612 [name] => Москва [name_en] => Moscow [country] => 3472 [lat] => 55.83 [lon] => 37.61 [high] => 147 ) 
     $this->_image->drawText( $this->toX( $box_START+1 ), 
                              $start_Y+$offset+3 ,
                              'Пункт:   ' ,
                              $TextSettingsINDEX);
     $this->_image->drawText( $this->toX( $box_START+10 ), 
                              $start_Y+$offset ,
-                             $stantionInfo['name'] ,
+                             $this->_stinfo['name'] ,
                              $TextSettingsINDEX);
     $offset +=$string_H;
     
@@ -1075,7 +1120,7 @@ class AeroDrawer
                              $TextSettingsINDEX);
     $this->_image->drawText( $this->toX( $box_START+10 ), 
                              $start_Y+$offset ,
-                             $stantionInfo['id'] ,
+                             $this->_stinfo['id'] ,
                              $TextSettingsINDEX);
     $offset +=$string_H;
 
@@ -1105,7 +1150,7 @@ class AeroDrawer
                              $TextSettingsINDEX);
     $this->_image->drawText( $this->toX( $box_START+10 ), 
                              $start_Y+$offset, 
-                             $stantionInfo['lat'].'°' ,
+                             $this->_stinfo['lat'].'°' ,
                              $TextSettingsINDEX);
     $offset +=$string_H;
 
@@ -1115,7 +1160,7 @@ class AeroDrawer
                              $TextSettingsINDEX);
     $this->_image->drawText( $this->toX( $box_START+10 ), 
                              $start_Y+$offset, 
-                             $stantionInfo['lon'].'°' ,
+                             $this->_stinfo['lon'].'°' ,
                              $TextSettingsINDEX);
     $offset +=$string_H;
 
@@ -1123,10 +1168,10 @@ class AeroDrawer
                              $start_Y+$offset+3 , 
                              'Превышение:   ' ,
                              $TextSettingsINDEX);
-    $this->_image->drawText( $this->toX( $box_START+13 ), 
-                             $start_Y+$offset , 
-                             $stantionInfo['high'].'м' ,
-                             $TextSettingsINDEX);
+    // $this->_image->drawText( $this->toX( $box_START+13 ), 
+    //                          $start_Y+$offset , 
+    //                          $this->_stinfo['high'].'м' ,
+    //                          $TextSettingsINDEX);
     $offset += $string_H + 10;
 
     
@@ -1447,7 +1492,7 @@ class AeroDrawer
    * @return [type] [description]
    */
   public function getImage(){
-      
+      return $this->_image->stroke();
   }
 
   /**
@@ -1493,12 +1538,102 @@ class AeroDrawer
   }
 
 
+
+
   /**
    *
    *.  DRAW function implemintation
    *
    * 
    */
+
+
+  //рисуем ветер
+  function drawWindLeaf($ff='',$dd='',$X0=0,$Y0=0,$param = array( "R"=>100,"G"=>100,"B"=>100,"Alpha"=>100,'Ticks'=>0 ) ) {
+    $dd=deg2rad($dd-180);
+
+    if ( $ff>125 ) $ff=125;
+
+    $lineWidth = 40; //длина палки
+    $windWidth = 15; //длина пера
+    $windDeg   = 60; //угол пера к палке
+    $wD        = $dd+deg2rad( $windDeg ); //абсолютный угол пера
+    $wD2       = $dd+deg2rad( $windDeg+5 ); //абсолютный угол пера для 25 м/с
+
+    $k1 = (tan($dd)+1) / (1-tan($dd));
+
+    $X1 = $X0+0-$lineWidth*sin($dd);
+    $Y1 = $Y0+0+$lineWidth*cos($dd);
+    
+    $this->_image->drawLine( $X0,$Y0,$X1,$Y1,$param );
+
+    //рисуем перья
+    //сначала по 25 м/с
+    $dX = 7; //шаг для большого пера 25м/с
+    $sdX= 0; //суммарный отступ от конца прямой
+    $steps = ($ff/25);
+    if ( $steps>=1 ){
+      $steps=floor($steps);
+      for ($i=1; $i <= $steps; $i++) { 
+        //риуем теругольник
+        
+        $X01 = $X0-($lineWidth-$sdX)*sin($dd); //начало пера
+        $Y01 = $Y0+($lineWidth-$sdX)*cos($dd); //начало пера
+
+        $X11 = $X01-($windWidth)*sin($wD2); //конец пера
+        $Y11 = $Y01+($windWidth)*cos($wD2); //конец пера
+
+        $X02 = $X0-($lineWidth-$sdX-4)*sin($dd); //начало пера
+        $Y02 = $Y0+($lineWidth-$sdX-4)*cos($dd); //начало пера
+
+        $Points[] = $X01;
+        $Points[] = $Y01;
+
+        $Points[] = $X11;
+        $Points[] = $Y11;
+
+        $Points[] = $X02;
+        $Points[] = $Y02;
+
+        $this->_image->drawPolygon($Points,$param);
+
+        $sdX+=$dX;
+      }
+      $ff=$ff-$steps*25; //вычитаем нарисованное
+    }
+
+    //рисуем пятерки
+    $dX=4;
+    $steps = ($ff/5);
+    if ( $steps>=1 ){
+      $steps=floor($steps);
+      for ($i=1; $i <= $steps; $i++) { 
+        
+        $X01 = $X0-($lineWidth-$sdX)*sin($dd); //начало пера
+        $Y01 = $Y0+($lineWidth-$sdX)*cos($dd); //начало пера
+
+        $X11 = $X01-($windWidth)*sin($wD); //конец пера
+        $Y11 = $Y01+($windWidth)*cos($wD); //конец пера
+
+        $this->_image->drawLine( $X01,$Y01,$X11,$Y11,$param );
+
+        $sdX+=$dX;
+      }
+      $ff=$ff-$steps*5; //вычитаем нарисованное 
+    }
+
+    //рисуем остатки
+    if ( $ff>0&&$ff<5 ){
+        $X01 = $X0-($lineWidth-$sdX)*sin($dd); //начало пера
+        $Y01 = $Y0+($lineWidth-$sdX)*cos($dd); //начало пера
+
+        $X11 = $X01-($windWidth/2)*sin($wD); //конец пера
+        $Y11 = $Y01+($windWidth/2)*cos($wD); //конец пера
+
+        $this->_image->drawLine( $X01,$Y01,$X11,$Y11,$param );
+    }
+
+  }
 
   //рисуем линию в координатах графика
   function drawChartLine( $X1,$Y1,$X2,$Y2,$Format="" ){
