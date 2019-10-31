@@ -91,8 +91,14 @@ class AeroDrawer
    * @var array
    */
   private $_fyellow = array('R'=>251,'G'=>255,'B'=>56);
-  private $_fred    = array('R'=>204,'G'=>41,'B'=>54);
+  private $_fred    = array('R'=>244,'G'=>41,'B'=>54);
   private $_fblue   = array('R'=>67,'G'=>146,'B'=>241);
+
+  /**
+   * Saved iamge path
+   * @var null
+   */
+  private $_img_name = Null;
 
   /**
    * Instantiate a new AeroDrawer instance.
@@ -758,7 +764,7 @@ class AeroDrawer
      *    
      */   
     $polygonStable   = array( "Alpha"=>35) + $this->_fblue ;
-    $polygonUNStable = array( "Alpha"=>20,
+    $polygonUNStable = array( "Alpha"=>30,
                               "Dash"=>TRUE,"DashR"=>170,"DashG"=>220,"DashB"=>190,
                               "BorderR"=>255, "BorderG"=>255,"BorderB"=>255)  + $this->_fred;
     $PointsA         = array();//точки на кривой состояния
@@ -777,8 +783,8 @@ class AeroDrawer
 
     $points   = $this->_kn->averageSpline2($sost,8);
     // $points   = $sost;
-    $points   = array_reverse($points);
     $point1   = reset($points);
+    $points   = array_reverse($points);
 
     //точки на кривой состояния
     foreach ($points as $p) {
@@ -792,6 +798,7 @@ class AeroDrawer
     $PointsA[] = $point1[1];
     $PointsA[] = $this->_start['T'];
     $PointsA[] = $this->_start['H'];
+
 
     //точки на кривой температуры
     foreach ($allValues as $P => $val) {
@@ -810,6 +817,7 @@ class AeroDrawer
     $PointsT[] = $this->_kn->getT($fH);
     $PointsT[] = $fH;
 
+
     //выделяем регионы с пересечением с кривой состояния и кривой стратификации
     $size   = sizeof( $PointsT );
     $prev   = null;
@@ -817,14 +825,22 @@ class AeroDrawer
     $j      = 0; //указатель на адрес в итоговом массиве
 
     //проходимся сверху вниз по кривой кривой состояния
-    for ($i=0; $i < $size ; $i+=2) { 
-      $Tx= $this->_kn->getPointOnSostSpline( null, $PointsT[$i+1] ) ;//температура на высоте кривой стратификации
-      if ( $PointsT[$i] > $Tx ){ //значит устойчиво true
+    for ($i=$size-1; $i > 0  ; $i-=2) { 
+      $Tx= $this->_kn->getPointOnSostSpline( null, $PointsT[$i] ) ;//температура на высоте кривой стратификации
+      if ( $Tx == null ){
+        continue;
+      }
+      if ( $prev==null ){
+        $prev   = array( $PointsT[$i-1], $PointsT[$i], $Tx );
+        $stable = $PointsT[$i-1] > $Tx;
+      }
+
+      if ( $PointsT[$i-1] > $Tx ){ //значит устойчиво true
           if ( !$stable && is_array( $prev ) ){ //если переходим из неустойчивости
               //ищем точку пересечения температуры с кривой стратификации
               //по подобным треугольникам (в приближении)
-              $y1 = $PointsT[$i+1];
-              $x1 = $PointsT[$i];
+              $y1 = $PointsT[$i];
+              $x1 = $PointsT[$i-1];
 
               $y2 = $prev[1];
               $x2 = $prev[0];
@@ -848,14 +864,14 @@ class AeroDrawer
               $PointsRes[$j]['res'][] = ($y12);
               $PointsRes[$j]['res'][] = ($x12);
               $PointsRes[$j]['res'][] = ($y12);
+              $PointsRes[$j]['res'][] = ($PointsT[$i-1]);
               $PointsRes[$j]['res'][] = ($PointsT[$i]);
-              $PointsRes[$j]['res'][] = ($PointsT[$i+1]);
               $PointsRes[$j]['type']  = 'stable';
               $j++;//завершаем секцию
           }
           if ( $stable ){ //если все усточиво - продолжаем массив с точками заполнять
+              $PointsRes[$j]['res'][] = ($PointsT[$i-1]);
               $PointsRes[$j]['res'][] = ($PointsT[$i]);
-              $PointsRes[$j]['res'][] = ($PointsT[$i+1]);
               $PointsRes[$j]['type']  = 'stable';
           }
           $stable                = true;
@@ -864,8 +880,8 @@ class AeroDrawer
           if ( $stable && is_array($prev) ){ //если переходим из устойчивости
               //ищем точку пересечения температуры с кривой стратификации
               //по подобным треугольникам (в приближении)
-              $y1 = $PointsT[$i+1];
-              $x1 = $PointsT[$i];
+              $y1 = $PointsT[$i];
+              $x1 = $PointsT[$i-1];
 
               $y2 = $prev[1];
               $x2 = $prev[0];
@@ -889,24 +905,25 @@ class AeroDrawer
               $PointsRes[$j]['res'][] = ($y12);
               $PointsRes[$j]['res'][] = ($x12);
               $PointsRes[$j]['res'][] = ($y12);
-              $PointsRes[$j]['res'][] = ($PointsT[$i]+0.1);
-              $PointsRes[$j]['res'][] = ($PointsT[$i+1]);
+              $PointsRes[$j]['res'][] = ($PointsT[$i-1]+0.1);
+              $PointsRes[$j]['res'][] = ($PointsT[$i]);
               $PointsRes[$j]['type']  = 'unstable';
               $j++;//завершаем секцию
           }
           if ( !$stable ){ //если все неусточиво - продолжаем массив с точками заполнять
-              $PointsRes[$j]['res'][] = ($PointsT[$i]+0.1);
-              $PointsRes[$j]['res'][] = ($PointsT[$i+1]);
+              $PointsRes[$j]['res'][] = ($PointsT[$i-1]+0.1);
+              $PointsRes[$j]['res'][] = ($PointsT[$i]);
               $PointsRes[$j]['type']  = 'unstable';
           }
           $stable                = false;
           $PointsRes[$j]['type'] = 'unstable';
       }
-      $prev = array( $PointsT[$i], $PointsT[$i+1], $Tx );
+      $prev = array( $PointsT[$i-1], $PointsT[$i], $Tx );
     }
 
     //включаем тени
     $this->_image->setShadow(false,$this->_shadow );   
+
 
     //заполняем снизу вверх точки температуры      
     foreach ($PointsRes as $val) {
@@ -923,16 +940,18 @@ class AeroDrawer
       }
 
       //дополняем массив точками на кривой состояния
-      $size = sizeof($PointsA);
-      for ( $i=0; $i < $size ; $i+=2 ) { 
-        if ( $PointsA[$i+1]<=$start && $PointsA[$i+1]>=$stop ){
-          $val['res'][] = $this->toX($PointsA[$i]);
-          $val['res'][] = $this->toY($PointsA[$i+1]);
+      $size = sizeof($PointsA)-1;
+      for ( $i= $size; $i >0 ; $i-=2 ) { 
+        if ( $PointsA[$i]>=$start && $PointsA[$i]<=$stop ){
+          $val['res'][] = $this->toX($PointsA[$i-1]);
+          $val['res'][] = $this->toY($PointsA[$i]);
         }
       }
 
       $val['res'][] = $this->toX( $this->_kn->getT($stop) );
       $val['res'][] = $this->toY( $stop );
+
+      
       if ( $val['type']=='stable' ){
           $this->_image->drawPolygon($val['res'],$polygonStable);
       }else{
@@ -1502,9 +1521,18 @@ class AeroDrawer
   public function saveImage(){
     /* Build the PNG file and send it to the web browser */ 
     $path  = '/png/'.$this->_stinfo['id'].'-'.$this->_kn->_date.'-'.$this->_kn->_utc.'.png';
+    $this->_img_name = $path;
     $fpath = $_SERVER['DOCUMENT_ROOT'].$path;
     $this->_image->render( $fpath );
     return $this;
+  }
+
+  /**
+   * return saved iamge path
+   * @return [type] [description]
+   */
+  public function getImagePath(){
+    return $this->_img_name;
   }
 
 

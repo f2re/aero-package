@@ -754,7 +754,13 @@ class AeroDecoder
   function interpolate(&$arr, $key){
     if ( is_array($arr) && sizeof($arr)>0  ){
       $prev=array( 'val'=> reset($arr), 'k'=>key($arr) );
+      if ( isset( $arr[$key] ) ){
+        return $arr[$key];
+      }
       foreach ($arr as $k => $val) {
+        if ( $key==$k ){
+          return $val;
+        }
         if ( $prev['k']!=$k ){
           if ( ($key >= $prev['k'] && $key <= $k) || ($key <= $prev['k'] && $key >= $k) ){
             return $prev['val'] + ( $prev['k'] - $key ) * ( ( $val-$prev['val'] )/( $prev['k']-$k ) );
@@ -902,7 +908,7 @@ class AeroDecoder
         'T' => $this->getT(null,$i)
        );
     }
-    print_r($this->p10);
+    // print_r($this->p10);
   }
 
 
@@ -1126,7 +1132,7 @@ class AeroDecoder
           //
           // Расчет температуры смоченного термометра средней в слое от земли до 900 гПа
           $UKP    = $this->getP($uk);
-          print_r($UKP);
+          // print_r($UKP);
           if ( $UKP==0 ){
             return 1;
           }
