@@ -1522,7 +1522,7 @@ class AeroDrawer
     /* Build the PNG file and send it to the web browser */ 
     $path  = '/png/'.$this->_stinfo['id'].'-'.$this->_kn->_date.'-'.$this->_kn->_utc.'.png';
     $this->_img_name = $path;
-    $fpath = $_SERVER['DOCUMENT_ROOT'].$path;
+    $fpath = public_path().$path;
     $this->_image->render( $fpath );
     return $this;
   }

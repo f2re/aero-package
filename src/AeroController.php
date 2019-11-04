@@ -23,8 +23,30 @@ class AeroController extends Controller
   {
     $provider  = new AeroDataProvider;
     $available = $provider->get_available();
+    $stantions = new Stantions();
+
+    // get all stantions and filter them by available
+    $allstantions = $stantions->get_all_stantions();
+
+    $allavailable = [];
+    foreach ($available as $st) {
+      if ( isset($allstantions[$st]) ){
+        $allavailable[$st] = $allstantions[$st];
+      }else{
+        $allavailable[$st] = [  'id'          => $st,
+                                'name'        => $st,
+                                'name_en'     => $st,
+                                'country'     => '',
+                                'lat'         => '',
+                                'lon'         => ''
+                                ];
+      }
+    }
+
+    
+
     return response()->json([
-        'stantions' => $available
+        'stantions' => $allavailable
     ]);
   }
 

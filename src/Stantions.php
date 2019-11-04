@@ -72,6 +72,14 @@ class Stantions
   }
 
   /**
+   * return all stantions in array
+   * @return [type] [description]
+   */
+  public function get_all_stantions(){
+    return $this->_stantions;
+  }
+
+  /**
    * read csv file with assigned delimiter
    * @param  [type] $csvFile [description]
    * @param  [type] $array   [description]
