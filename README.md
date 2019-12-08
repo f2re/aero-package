@@ -66,4 +66,6 @@ $drawer->init()
      ->drawIndexes()
      ->saveImage();
 ```
-This pipeline generate this chart: [http://ivanf2re.tmweb.ru/png/27038-2019-12-08-12.png](Vologda chart)
+This pipeline generate this chart: ![Vologda chart](http://ivanf2re.tmweb.ru/png/27038-2019-12-08-12.png)
+
+
