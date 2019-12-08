@@ -1,3 +1,7 @@
+[![Latest Stable Version](https://poser.pugx.org/f2re/aero/v/stable)](https://packagist.org/packages/f2re/aero)
+[![Latest Unstable Version](https://poser.pugx.org/f2re/aero/v/unstable)](https://packagist.org/packages/f2re/aero)
+[![License](https://poser.pugx.org/f2re/aero/license)](https://packagist.org/packages/f2re/aero)
+
 # aero-package
 Package for Laravel. Chart aero sounding data
 
