@@ -5,6 +5,8 @@ namespace F2re\Aero\Controllers;
 use App\Http\Controllers\Controller;
 
 use Illuminate\Http\Response;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Input;
 
 use F2re\Aero\AeroDecoder;
 use F2re\Aero\AeroDataProvider;
@@ -105,6 +107,24 @@ class AeroController extends Controller
       $path = $drawer->getImagePath();
       return $path;
     }
+  }
+
+  /**
+   * get chart from post raw
+   * @return [type] [description]
+   */
+  public function getchart_post(Request $request){
+    $path = false;
+    $raw  = false;
+    if ( Input::has('raw') ){
+      $raw = Input::get('raw');  
+      $path = $this->getchart($raw);
+    }
+
+    return response()->json([
+        'path' =>  $path,
+        'raw' => $raw,
+    ]);
   }
 
 
